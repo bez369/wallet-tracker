@@ -95,9 +95,9 @@ One row per detected BUY or SELL. The columns that matter for your
   (~1000 accounts/page) to control RPC cost. It aggregates positive balances
   by owner and marks capped results partial. Program/LP exclusion rules are
   not inferred automatically. Set `HOLDER_LOOKUP_MAX_PAGES=0` to skip it.
-- **SOL/USD**: Dexscreener's SOL pair quote is a live snapshot, not a
-  historical candle. The quote timestamp and source are recorded so stale or
-  missing values can be excluded from analysis.
+- **SOL/USD**: CoinGecko's SOL/USD quote is a live snapshot, not a historical
+  candle. The quote timestamp and source are recorded so stale or missing
+  values can be excluded from analysis.
 - **Dev wallet SOL balance**: live balance at the time of his trade, straight
   RPC `getBalance`.
 

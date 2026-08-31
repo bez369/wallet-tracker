@@ -2,7 +2,6 @@ import axios from "axios";
 import { DexscreenerPair } from "./types";
 
 const BASE = "https://api.dexscreener.com/latest/dex/tokens";
-const SOL_MINT = "So11111111111111111111111111111111111112";
 
 interface DexscreenerResponse {
   pairs: DexscreenerPair[] | null;
@@ -34,11 +33,13 @@ export interface SolUsdQuote {
 
 export async function getSolUsdQuote(): Promise<SolUsdQuote | null> {
   try {
-    const { data } = await axios.get<DexscreenerResponse>(`${BASE}/${SOL_MINT}`, { timeout: 10000 });
-    const pair = data.pairs?.find((candidate) => /USD[CT]?$/i.test(candidate.quoteToken?.symbol ?? "")) ?? data.pairs?.[0];
-    const priceUsd = Number(pair?.priceUsd);
+    const { data } = await axios.get<{ solana?: { usd?: number } }>(
+      "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
+      { timeout: 10000 }
+    );
+    const priceUsd = Number(data.solana?.usd);
     if (!Number.isFinite(priceUsd) || priceUsd <= 0) return null;
-    return { priceUsd, timestampSec: Math.floor(Date.now() / 1000), source: "dexscreener" };
+    return { priceUsd, timestampSec: Math.floor(Date.now() / 1000), source: "coingecko" };
   } catch (err) {
     console.warn("[dexscreener] getSolUsdQuote failed:", (err as Error).message);
     return null;

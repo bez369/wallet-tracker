@@ -1,4 +1,5 @@
 import axios from "axios";
+import { config } from "./config";
 import { PumpFunCoin } from "./types";
 
 // This is pump.fun's public frontend API. It's unofficial and undocumented —
@@ -41,6 +42,15 @@ export interface DevTokenCount {
 
 const devCoinCountCache = new Map<string, DevTokenCount | null>();
 
+interface HeliusAssetsByCreatorResponse {
+  result?: {
+    total?: number;
+    items?: unknown[];
+    page?: number;
+  };
+  error?: { message?: string };
+}
+
 /**
  * How many coins this dev wallet has created on pump.fun (best-effort — count
  * comes from a paginated endpoint, we page until it stops returning results).
@@ -48,21 +58,25 @@ const devCoinCountCache = new Map<string, DevTokenCount | null>();
 export async function getDevTokensCreatedCount(devWallet: string): Promise<DevTokenCount | null> {
   if (devCoinCountCache.has(devWallet)) return devCoinCountCache.get(devWallet)!;
   try {
-    let total = 0;
-    let offset = 0;
-    const limit = 50;
-    for (let i = 0; i < 10; i++) {
-      // hard cap: 500 coins is plenty to prove "serial deployer"
-      const { data } = await client.get<PumpFunCoin[] | { coins?: PumpFunCoin[] }>(`${BASE}/coins/user-created-coins/${devWallet}`, {
-        params: { offset, limit, includeNsfw: true },
-      });
-      const coins = Array.isArray(data) ? data : data?.coins;
-      if (!Array.isArray(coins) || coins.length === 0) break;
-      total += coins.length;
-      offset += limit;
-      if (coins.length < limit) break;
-    }
-    const result = { count: total, capped: total >= 500 };
+    const { data } = await axios.post<HeliusAssetsByCreatorResponse>(
+      config.rpcUrl,
+      {
+        jsonrpc: "2.0",
+        id: "dev-assets",
+        method: "getAssetsByCreator",
+        params: {
+          creatorAddress: devWallet,
+          page: 1,
+          limit: 1,
+          displayOptions: { showFungible: true },
+        },
+      },
+      { timeout: 15000 }
+    );
+    if (data.error) throw new Error(data.error.message ?? "Helius DAS error");
+    const total = data.result?.total;
+    if (!Number.isFinite(total)) throw new Error("Helius DAS response did not include total");
+    const result = { count: total!, capped: false };
     devCoinCountCache.set(devWallet, result);
     return result;
   } catch (err) {

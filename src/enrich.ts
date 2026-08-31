@@ -56,6 +56,11 @@ export async function enrichTrade(trade: DetectedTrade): Promise<CsvRow> {
   }
 
   const tokenCreatedAtSec = coin ? Math.floor(coin.created_timestamp / 1000) : null;
+  const bondingCurveCompletionPct = coin
+    ? coin.complete
+      ? 100
+      : Math.max(0, Math.min(100, ((1_073_000_000 - coin.virtual_token_reserves) / (1_073_000_000 - 206_900_000)) * 100))
+    : "";
 
   const row: CsvRow = {
     timestamp_iso: new Date(trade.timestampSec * 1000).toISOString(),
@@ -97,7 +102,7 @@ export async function enrichTrade(trade: DetectedTrade): Promise<CsvRow> {
     sol_usd_quote_source: solUsdQuote?.source ?? "",
     sol_amount_usd: solUsdQuote ? trade.solAmount * solUsdQuote.priceUsd : "",
     bonding_curve_status: coin ? "known" : "unavailable",
-    bonding_curve_completion_pct: "",
+    bonding_curve_completion_pct: bondingCurveCompletionPct,
     dev_tokens_created_status: devCount ? (devCount.capped ? "capped" : "known") : "unavailable",
     holder_count: holderEstimate?.count ?? "",
     top10_holder_concentration_pct: holderEstimate?.top10ConcentrationPct ?? "",
