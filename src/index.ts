@@ -2,7 +2,7 @@ import { config } from "./config";
 import { appendRow, ensureCsvHeader } from "./csvWriter";
 import { enrichTrade } from "./enrich";
 import { fetchNewTransactions } from "./heliusClient";
-import { getLastProcessedSignature, loadState, saveState, setLastProcessedSignature } from "./state";
+import { getLastProcessedSignature, hasProcessed, loadState, markProcessed, saveState, setLastProcessedSignature } from "./state";
 import { detectTrade } from "./tradeDetector";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -16,6 +16,7 @@ async function pollOnce(): Promise<void> {
   console.log(`[poll] ${txs.length} new transaction(s) since last check`);
 
   for (const tx of txs) {
+    if (hasProcessed(tx.signature)) continue;
     const trade = detectTrade(tx);
     if (trade) {
       console.log(
@@ -26,11 +27,11 @@ async function pollOnce(): Promise<void> {
       try {
         const row = await enrichTrade(trade);
         appendRow(row);
+        markProcessed(tx.signature);
       } catch (err) {
         console.error(`[enrich] failed for ${trade.signature}:`, (err as Error).message);
-        // We still advance lastProcessedSignature below so a bad enrichment
-        // doesn't wedge the poller retrying forever — the trade itself is
-        // logged to the console either way for manual follow-up.
+        // Leave this signature retryable; cursor progress must follow persistence.
+        continue;
       }
     } else if (config.debugLogSkipped) {
       console.log(
@@ -38,10 +39,10 @@ async function pollOnce(): Promise<void> {
           `tokenTransfers=${tx.tokenTransfers?.length ?? 0} nativeTransfers=${tx.nativeTransfers?.length ?? 0}`
       );
     }
+    markProcessed(tx.signature);
     setLastProcessedSignature(tx.signature);
+    saveState();
   }
-
-  saveState();
 }
 
 async function main() {

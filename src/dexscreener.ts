@@ -2,6 +2,7 @@ import axios from "axios";
 import { DexscreenerPair } from "./types";
 
 const BASE = "https://api.dexscreener.com/latest/dex/tokens";
+const SOL_MINT = "So11111111111111111111111111111111111112";
 
 interface DexscreenerResponse {
   pairs: DexscreenerPair[] | null;
@@ -21,6 +22,25 @@ export async function getBestPair(mint: string): Promise<DexscreenerPair | null>
     );
   } catch (err) {
     console.warn(`[dexscreener] getBestPair(${mint}) failed:`, (err as Error).message);
+    return null;
+  }
+}
+
+export interface SolUsdQuote {
+  priceUsd: number;
+  timestampSec: number;
+  source: string;
+}
+
+export async function getSolUsdQuote(): Promise<SolUsdQuote | null> {
+  try {
+    const { data } = await axios.get<DexscreenerResponse>(`${BASE}/${SOL_MINT}`, { timeout: 10000 });
+    const pair = data.pairs?.find((candidate) => /USD[CT]?$/i.test(candidate.quoteToken?.symbol ?? "")) ?? data.pairs?.[0];
+    const priceUsd = Number(pair?.priceUsd);
+    if (!Number.isFinite(priceUsd) || priceUsd <= 0) return null;
+    return { priceUsd, timestampSec: Math.floor(Date.now() / 1000), source: "dexscreener" };
+  } catch (err) {
+    console.warn("[dexscreener] getSolUsdQuote failed:", (err as Error).message);
     return null;
   }
 }

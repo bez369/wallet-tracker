@@ -1,6 +1,6 @@
-import { getBestPair } from "./dexscreener";
+import { getBestPair, getSolUsdQuote } from "./dexscreener";
 import { getCoin, getDevTokensCreatedCount } from "./pumpfunApi";
-import { getApproxHolderCount, getSolBalance } from "./solanaRpc";
+import { getApproxHolderCount, getSolBalance, getTransactionFee } from "./solanaRpc";
 import { getMintHistory, recordTrade } from "./state";
 import { CsvRow, DetectedTrade } from "./types";
 
@@ -23,12 +23,37 @@ export async function enrichTrade(trade: DetectedTrade): Promise<CsvRow> {
   // dexscreener all run concurrently.
   const coin = await getCoin(trade.mint);
 
-  const [devBalance, devCount, holderEstimate, pair] = await Promise.all([
+  const [devBalance, devCount, holderEstimate, pair, feeSol, solUsdQuote] = await Promise.all([
     coin?.creator ? getSolBalance(coin.creator) : Promise.resolve(null),
     coin?.creator ? getDevTokensCreatedCount(coin.creator) : Promise.resolve(null),
     getApproxHolderCount(trade.mint),
     getBestPair(trade.mint),
+    getTransactionFee(trade.signature),
+    getSolUsdQuote(),
   ]);
+
+  let positionTokenAmount = 0;
+  let positionCostBasisSol = 0;
+  for (const historyEntry of priorHistory) {
+    if (historyEntry.action === "BUY") {
+      positionTokenAmount += historyEntry.tokenAmount;
+      positionCostBasisSol += historyEntry.solAmount;
+    } else {
+      const sold = Math.min(positionTokenAmount, historyEntry.tokenAmount);
+      const averageCost = positionTokenAmount > 0 ? positionCostBasisSol / positionTokenAmount : 0;
+      positionTokenAmount -= sold;
+      positionCostBasisSol = Math.max(0, positionCostBasisSol - sold * averageCost);
+    }
+  }
+  if (trade.action === "BUY") {
+    positionTokenAmount += trade.tokenAmount;
+    positionCostBasisSol += trade.solAmount + (feeSol ?? 0);
+  } else {
+    const sold = Math.min(positionTokenAmount, trade.tokenAmount);
+    const averageCost = positionTokenAmount > 0 ? positionCostBasisSol / positionTokenAmount : 0;
+    positionTokenAmount -= sold;
+    positionCostBasisSol = Math.max(0, positionCostBasisSol - sold * averageCost);
+  }
 
   const tokenCreatedAtSec = coin ? Math.floor(coin.created_timestamp / 1000) : null;
 
@@ -50,7 +75,7 @@ export async function enrichTrade(trade: DetectedTrade): Promise<CsvRow> {
     market_cap_usd: coin?.usd_market_cap ?? "",
     dev_wallet: coin?.creator ?? "",
     dev_wallet_sol_balance: devBalance ?? "",
-    dev_tokens_created_count: devCount ?? "",
+    dev_tokens_created_count: devCount?.count ?? "",
     holder_count_approx: holderEstimate?.count ?? "",
     holder_count_capped: holderEstimate?.capped ?? "",
     volume_5m_usd: pair?.volume?.m5 ?? "",
@@ -61,6 +86,22 @@ export async function enrichTrade(trade: DetectedTrade): Promise<CsvRow> {
     price_change_1h_pct: pair?.priceChange?.h1 ?? "",
     txns_24h_buys: pair?.txns?.h24?.buys ?? "",
     txns_24h_sells: pair?.txns?.h24?.sells ?? "",
+    network_fee_sol: feeSol ?? "",
+    priority_fee_sol: "",
+    position_token_amount: positionTokenAmount,
+    position_cost_basis_sol: positionCostBasisSol,
+    decision_cluster_id: trade.signature,
+    decision_cluster_member_count: 1,
+    sol_usd_price: solUsdQuote?.priceUsd ?? "",
+    sol_usd_quote_timestamp_iso: solUsdQuote ? new Date(solUsdQuote.timestampSec * 1000).toISOString() : "",
+    sol_usd_quote_source: solUsdQuote?.source ?? "",
+    sol_amount_usd: solUsdQuote ? trade.solAmount * solUsdQuote.priceUsd : "",
+    bonding_curve_status: coin ? "known" : "unavailable",
+    bonding_curve_completion_pct: "",
+    dev_tokens_created_status: devCount ? (devCount.capped ? "capped" : "known") : "unavailable",
+    holder_count: holderEstimate?.count ?? "",
+    top10_holder_concentration_pct: holderEstimate?.top10ConcentrationPct ?? "",
+    holder_data_status: holderEstimate?.status ?? "unavailable",
   };
 
   // Record this trade into history *after* computing entry_number/seconds_since_prev_entry

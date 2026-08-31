@@ -3,14 +3,32 @@ import * as path from "path";
 import { config } from "./config";
 import { MintHistoryEntry, PersistedState } from "./types";
 
-let state: PersistedState = { lastProcessedSignature: null, mintHistory: {} };
+const emptyState = (): PersistedState => ({
+  lastProcessedSignature: null,
+  mintHistory: {},
+  processedSignatures: {},
+});
+
+let state: PersistedState = emptyState();
 
 export function loadState(): PersistedState {
   try {
     const raw = fs.readFileSync(config.statePath, "utf-8");
-    state = JSON.parse(raw);
+    const parsed = JSON.parse(raw) as Partial<PersistedState>;
+    state = {
+      lastProcessedSignature: parsed.lastProcessedSignature ?? null,
+      mintHistory: parsed.mintHistory ?? {},
+      processedSignatures: parsed.processedSignatures ?? {},
+    };
+    for (const entries of Object.values(state.mintHistory)) {
+      const uniqueEntries = entries.filter((entry, index, all) =>
+        all.findIndex((candidate) => candidate.signature === entry.signature) === index
+      );
+      entries.splice(0, entries.length, ...uniqueEntries);
+      for (const entry of uniqueEntries) state.processedSignatures[entry.signature] = true;
+    }
   } catch {
-    state = { lastProcessedSignature: null, mintHistory: {} };
+    state = emptyState();
   }
   return state;
 }
@@ -31,11 +49,20 @@ export function setLastProcessedSignature(sig: string): void {
   state.lastProcessedSignature = sig;
 }
 
+export function hasProcessed(signature: string): boolean {
+  return state.processedSignatures[signature] === true;
+}
+
+export function markProcessed(signature: string): void {
+  state.processedSignatures[signature] = true;
+}
+
 export function getMintHistory(mint: string): MintHistoryEntry[] {
   return state.mintHistory[mint] ?? [];
 }
 
 export function recordTrade(mint: string, entry: MintHistoryEntry): void {
+  if (state.mintHistory[mint]?.some((existing) => existing.signature === entry.signature)) return;
   if (!state.mintHistory[mint]) state.mintHistory[mint] = [];
   state.mintHistory[mint].push(entry);
 }

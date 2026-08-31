@@ -71,6 +71,7 @@ export interface DexscreenerPair {
   txns: { h24: { buys: number; sells: number } };
   pairCreatedAt?: number;
   priceUsd?: string;
+  quoteToken?: { symbol?: string };
 }
 
 // --- Per-mint history we persist locally, to detect re-entries ---
@@ -86,6 +87,7 @@ export interface MintHistoryEntry {
 export interface PersistedState {
   lastProcessedSignature: string | null;
   mintHistory: Record<string, MintHistoryEntry[]>;
+  processedSignatures: Record<string, true>;
 }
 
 // --- Final enriched row written to CSV ---
@@ -119,4 +121,20 @@ export interface CsvRow {
   price_change_1h_pct: number | "";
   txns_24h_buys: number | "";
   txns_24h_sells: number | "";
+  network_fee_sol: number | "";
+  priority_fee_sol: number | "";
+  position_token_amount: number | "";
+  position_cost_basis_sol: number | "";
+  decision_cluster_id: string;
+  decision_cluster_member_count: number;
+  sol_usd_price: number | "";
+  sol_usd_quote_timestamp_iso: string | "";
+  sol_usd_quote_source: string | "";
+  sol_amount_usd: number | "";
+  bonding_curve_status: "known" | "unavailable" | "";
+  bonding_curve_completion_pct: number | "";
+  dev_tokens_created_status: "known" | "capped" | "unavailable" | "";
+  holder_count: number | "";
+  top10_holder_concentration_pct: number | "";
+  holder_data_status: "complete" | "partial" | "unavailable" | "";
 }

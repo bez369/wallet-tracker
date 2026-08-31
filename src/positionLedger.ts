@@ -116,6 +116,7 @@ export function buildPositionLedger(inputPath: string, outputPath: string): void
     const action = (trade.action ?? "").toUpperCase();
     const tokenAmount = num(trade.token_amount);
     const solAmount = num(trade.sol_amount);
+    const feeSol = num(trade.network_fee_sol) + num(trade.priority_fee_sol);
     const prevPos = byMint.get(mint) ?? {
       qty: 0,
       totalCostSol: 0,
@@ -141,14 +142,14 @@ export function buildPositionLedger(inputPath: string, outputPath: string): void
     if (action === "BUY") {
       reentry = prevQty === 0;
       qtyAfter = prevQty + tokenAmount;
-      totalCostAfter = prevPos.totalCostSol + solAmount;
+      totalCostAfter = prevPos.totalCostSol + solAmount + feeSol;
       prevPos.lastBuyTs = ts;
       prevPos.lastEntryPrice = solAmount / tokenAmount || prevPos.lastEntryPrice;
     } else if (action === "SELL") {
       const soldQty = Math.min(prevQty, tokenAmount);
       if (prevQty > 0) {
         const costBasis = soldQty * prevAvgCost;
-        realizedPnl = solAmount - costBasis;
+        realizedPnl = solAmount - feeSol - costBasis;
         totalCostAfter = Math.max(0, prevPos.totalCostSol - costBasis);
         qtyAfter = Math.max(0, prevQty - soldQty);
         fullExit = qtyAfter === 0;

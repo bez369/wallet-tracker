@@ -28,6 +28,7 @@ export async function fetchTransactionsPage(before?: string): Promise<HeliusEnha
  */
 export async function fetchNewTransactions(sinceSignature: string | null): Promise<HeliusEnhancedTransaction[]> {
   const collected: HeliusEnhancedTransaction[] = [];
+  const seen = new Set<string>();
   let before: string | undefined = undefined;
   const MAX_PAGES = 20; // safety cap in case the wallet is extremely active between polls
 
@@ -37,18 +38,28 @@ export async function fetchNewTransactions(sinceSignature: string | null): Promi
 
     if (sinceSignature === null) {
       // First run: don't backfill, just seed with the newest page.
-      return batch.reverse();
+      return batch.filter((tx) => !seen.has(tx.signature) && seen.add(tx.signature)).reverse();
     }
 
     const cutoffIndex = batch.findIndex((tx) => tx.signature === sinceSignature);
     if (cutoffIndex === -1) {
       // Haven't reached the known signature yet — keep everything and page further back.
-      collected.push(...batch);
+      for (const tx of batch) {
+        if (!seen.has(tx.signature)) {
+          seen.add(tx.signature);
+          collected.push(tx);
+        }
+      }
       before = batch[batch.length - 1].signature;
       continue;
     } else {
       // Found it — keep only the transactions newer than it, then stop.
-      collected.push(...batch.slice(0, cutoffIndex));
+      for (const tx of batch.slice(0, cutoffIndex)) {
+        if (!seen.has(tx.signature)) {
+          seen.add(tx.signature);
+          collected.push(tx);
+        }
+      }
       return collected.reverse();
     }
   }

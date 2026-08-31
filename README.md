@@ -36,9 +36,11 @@ and tracks forward from there, so you'll build up entry/re-entry data as it
 happens rather than starting with a fully-formed picture. If you want his
 past week's trades too, see "Backfilling history" below.
 
-State (last processed signature + this wallet's buy/sell history per mint)
-persists to `state/state.json`, so you can stop and restart the process
-without losing re-entry tracking or double-logging trades.
+State (last processed signature, processed-signature index, and this wallet's
+buy/sell history per mint) persists to `state/state.json`, so you can stop and
+restart the process without losing re-entry tracking or double-logging trades.
+The signature is marked processed only after its row is written; failed
+enrichment remains retryable.
 
 ## What ends up in the CSV
 
@@ -57,7 +59,22 @@ One row per detected BUY or SELL. The columns that matter for your
 - `dev_wallet_sol_balance`, `dev_tokens_created_count` — whether he's more
   willing to add to tokens from devs with a track record / with SOL still on
   the table (less likely to have already rugged).
-- `holder_count_approx` — directional only, see caveat below.
+- `network_fee_sol`, `priority_fee_sol` — transaction fee fields. The current
+  RPC lookup reports the total transaction fee as `network_fee_sol`; priority
+  fee is blank unless a provider exposes that split.
+- `position_token_amount`, `position_cost_basis_sol` — live post-trade
+  position state calculated from the tracker's unique history. Cost basis
+  includes fees.
+- `decision_cluster_id`, `decision_cluster_member_count` — stable
+  same-signature decision metadata. Separate transactions remain separate
+  decisions even when they occur within five seconds.
+- `sol_usd_price`, `sol_amount_usd`, and quote fields — Dexscreener SOL/USD
+  snapshot and provenance at polling time.
+- `bonding_curve_status` and `bonding_curve_completion_pct` — migration
+  status is known when pump.fun responds; historical completion percentage is
+  currently unavailable.
+- `holder_count`, `top10_holder_concentration_pct` — positive balances
+  aggregated by owner. Capped lookups are marked partial.
 
 ## Data sources & caveats
 
@@ -73,11 +90,14 @@ One row per detected BUY or SELL. The columns that matter for your
 - **Volume / liquidity / price change**: Dexscreener's free public API, no
   key needed. Brand-new bonding-curve-only tokens may not be indexed yet —
   those fields just come back blank, which is expected.
-- **Holder count**: approximate, via Helius's `getTokenAccounts` DAS method,
-  capped at `HOLDER_LOOKUP_MAX_PAGES` pages (~1000 accounts/page) to control
-  RPC cost. It counts token *accounts*, not unique owners, so treat it as
-  directional. Set `HOLDER_LOOKUP_MAX_PAGES=0` to skip it entirely if you'd
-  rather not spend the RPC credits.
+- **Holder count/concentration**: approximate, via Helius's
+  `getTokenAccounts` DAS method, capped at `HOLDER_LOOKUP_MAX_PAGES` pages
+  (~1000 accounts/page) to control RPC cost. It aggregates positive balances
+  by owner and marks capped results partial. Program/LP exclusion rules are
+  not inferred automatically. Set `HOLDER_LOOKUP_MAX_PAGES=0` to skip it.
+- **SOL/USD**: Dexscreener's SOL pair quote is a live snapshot, not a
+  historical candle. The quote timestamp and source are recorded so stale or
+  missing values can be excluded from analysis.
 - **Dev wallet SOL balance**: live balance at the time of his trade, straight
   RPC `getBalance`.
 
