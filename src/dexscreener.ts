@@ -31,7 +31,13 @@ export interface SolUsdQuote {
   source: string;
 }
 
+let solUsdQuoteCache: SolUsdQuote | null = null;
+let solUsdQuoteMinute = -1;
+
 export async function getSolUsdQuote(): Promise<SolUsdQuote | null> {
+  const minute = Math.floor(Date.now() / 60_000);
+  if (solUsdQuoteCache && solUsdQuoteMinute === minute) return solUsdQuoteCache;
+
   try {
     const { data } = await axios.get<{ solana?: { usd?: number } }>(
       "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
@@ -39,9 +45,11 @@ export async function getSolUsdQuote(): Promise<SolUsdQuote | null> {
     );
     const priceUsd = Number(data.solana?.usd);
     if (!Number.isFinite(priceUsd) || priceUsd <= 0) return null;
-    return { priceUsd, timestampSec: Math.floor(Date.now() / 1000), source: "coingecko" };
+    solUsdQuoteCache = { priceUsd, timestampSec: Math.floor(Date.now() / 1000), source: "coingecko" };
+    solUsdQuoteMinute = minute;
+    return solUsdQuoteCache;
   } catch (err) {
     console.warn("[dexscreener] getSolUsdQuote failed:", (err as Error).message);
-    return null;
+    return solUsdQuoteCache;
   }
 }

@@ -1,34 +1,28 @@
 import { getBestPair, getSolUsdQuote } from "./dexscreener";
+import { TradeClusterContext } from "./clustering";
 import { getCoin, getDevTokensCreatedCount } from "./pumpfunApi";
-import { getApproxHolderCount, getSolBalance, getTransactionFee } from "./solanaRpc";
-import { getMintHistory, recordTrade } from "./state";
-import { CsvRow, DetectedTrade } from "./types";
+import { getApproxHolderCount, getSolBalance } from "./solanaRpc";
+import { getMintHistory } from "./state";
+import { CsvRow, DetectedTrade, MintHistoryEntry } from "./types";
 
-export async function enrichTrade(trade: DetectedTrade): Promise<CsvRow> {
-  const priorHistory = getMintHistory(trade.mint); // everything we've seen before this trade
-  const priorBuys = priorHistory.filter((h) => h.action === "BUY");
-
-  // entry_number: for a BUY, which numbered entry this is into the mint.
-  // for a SELL, how many prior buys preceded it (context for "he sold after N adds").
-  const entryNumber = trade.action === "BUY" ? priorBuys.length + 1 : priorBuys.length;
-
-  let secondsSincePrevEntry: number | "" = "";
-  const prevBuy = priorBuys[priorBuys.length - 1];
-  if (prevBuy) {
-    secondsSincePrevEntry = trade.timestampSec - prevBuy.timestampSec;
-  }
+export async function enrichTrade(
+  trade: DetectedTrade,
+  cluster: TradeClusterContext
+): Promise<{ row: CsvRow; historyEntry: MintHistoryEntry }> {
+  const priorHistory = getMintHistory(trade.mint);
+  const entryNumber = cluster.entryNumber;
+  const secondsSincePrevEntry = cluster.secondsSincePrevEntry;
 
   // Fire off independent lookups in parallel — coin info is needed first to get
   // the dev wallet, so that one goes first, then dev-balance/dev-count/holders/
   // dexscreener all run concurrently.
   const coin = await getCoin(trade.mint);
 
-  const [devBalance, devCount, holderEstimate, pair, feeSol, solUsdQuote] = await Promise.all([
+  const [devBalance, devCount, holderEstimate, pair, solUsdQuote] = await Promise.all([
     coin?.creator ? getSolBalance(coin.creator) : Promise.resolve(null),
     coin?.creator ? getDevTokensCreatedCount(coin.creator) : Promise.resolve(null),
     getApproxHolderCount(trade.mint),
     getBestPair(trade.mint),
-    getTransactionFee(trade.signature),
     getSolUsdQuote(),
   ]);
 
@@ -37,7 +31,7 @@ export async function enrichTrade(trade: DetectedTrade): Promise<CsvRow> {
   for (const historyEntry of priorHistory) {
     if (historyEntry.action === "BUY") {
       positionTokenAmount += historyEntry.tokenAmount;
-      positionCostBasisSol += historyEntry.solAmount;
+      positionCostBasisSol += historyEntry.solAmount + (historyEntry.feeSol === "" || historyEntry.feeSol === undefined ? 0 : historyEntry.feeSol);
     } else {
       const sold = Math.min(positionTokenAmount, historyEntry.tokenAmount);
       const averageCost = positionTokenAmount > 0 ? positionCostBasisSol / positionTokenAmount : 0;
@@ -47,7 +41,7 @@ export async function enrichTrade(trade: DetectedTrade): Promise<CsvRow> {
   }
   if (trade.action === "BUY") {
     positionTokenAmount += trade.tokenAmount;
-    positionCostBasisSol += trade.solAmount + (feeSol ?? 0);
+    positionCostBasisSol += trade.solAmount + (trade.feeSol === "" ? 0 : trade.feeSol);
   } else {
     const sold = Math.min(positionTokenAmount, trade.tokenAmount);
     const averageCost = positionTokenAmount > 0 ? positionCostBasisSol / positionTokenAmount : 0;
@@ -91,12 +85,12 @@ export async function enrichTrade(trade: DetectedTrade): Promise<CsvRow> {
     price_change_1h_pct: pair?.priceChange?.h1 ?? "",
     txns_24h_buys: pair?.txns?.h24?.buys ?? "",
     txns_24h_sells: pair?.txns?.h24?.sells ?? "",
-    network_fee_sol: feeSol ?? "",
-    priority_fee_sol: "",
+    network_fee_sol: trade.feeSol,
+    priority_fee_sol: trade.priorityFeeSol,
     position_token_amount: positionTokenAmount,
     position_cost_basis_sol: positionCostBasisSol,
-    decision_cluster_id: trade.signature,
-    decision_cluster_member_count: 1,
+    decision_cluster_id: cluster.id,
+    decision_cluster_member_count: cluster.memberCount,
     sol_usd_price: solUsdQuote?.priceUsd ?? "",
     sol_usd_quote_timestamp_iso: solUsdQuote ? new Date(solUsdQuote.timestampSec * 1000).toISOString() : "",
     sol_usd_quote_source: solUsdQuote?.source ?? "",
@@ -109,15 +103,16 @@ export async function enrichTrade(trade: DetectedTrade): Promise<CsvRow> {
     holder_data_status: holderEstimate?.status ?? "unavailable",
   };
 
-  // Record this trade into history *after* computing entry_number/seconds_since_prev_entry
-  // above, so the next trade on this mint sees it correctly.
-  recordTrade(trade.mint, {
+  const historyEntry: MintHistoryEntry = {
     signature: trade.signature,
     timestampSec: trade.timestampSec,
     action: trade.action,
     solAmount: trade.solAmount,
     tokenAmount: trade.tokenAmount,
-  });
+    feeSol: trade.feeSol,
+    decisionClusterId: cluster.id || undefined,
+    decisionClusterStartTimestampSec: cluster.startTimestampSec ?? undefined,
+  };
 
-  return row;
+  return { row, historyEntry };
 }

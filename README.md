@@ -59,15 +59,18 @@ One row per detected BUY or SELL. The columns that matter for your
 - `dev_wallet_sol_balance`, `dev_tokens_created_count` — whether he's more
   willing to add to tokens from devs with a track record / with SOL still on
   the table (less likely to have already rugged).
-- `network_fee_sol`, `priority_fee_sol` — transaction fee fields. The current
-  RPC lookup reports the total transaction fee as `network_fee_sol`; priority
-  fee is blank unless a provider exposes that split.
+- `network_fee_sol`, `priority_fee_sol` — transaction fee fields. The first is
+  the exact total `fee` reported by Helius. The second is a local estimate
+  after the 5,000 lamport base signature fee, not instruction-level exact.
 - `position_token_amount`, `position_cost_basis_sol` — live post-trade
   position state calculated from the tracker's unique history. Cost basis
   includes fees.
-- `decision_cluster_id`, `decision_cluster_member_count` — stable
-  same-signature decision metadata. Separate transactions remain separate
-  decisions even when they occur within five seconds.
+- `decision_cluster_id`, `decision_cluster_member_count` — BUY-only decision
+  clustering metadata. Each signature remains its own CSV row, but nearby
+  same-mint BUYs share an entry number when they are within
+  `ENTRY_CLUSTER_GAP_SEC` (default 5 seconds) and the cluster span is within
+  `ENTRY_CLUSTER_MAX_SPAN_SEC` (default 20 seconds). SELLs do not increment
+  entry numbers.
 - `sol_usd_price`, `sol_amount_usd`, and quote fields — Dexscreener SOL/USD
   snapshot and provenance at polling time.
 - `bonding_curve_status` and `bonding_curve_completion_pct` — migration
@@ -75,6 +78,9 @@ One row per detected BUY or SELL. The columns that matter for your
   currently unavailable.
 - `holder_count`, `top10_holder_concentration_pct` — positive balances
   aggregated by owner. Capped lookups are marked partial.
+
+`sol_usd_price` is a polling-time CoinGecko quote cached for one UTC minute;
+it is not a historical execution-time price.
 
 ## Data sources & caveats
 

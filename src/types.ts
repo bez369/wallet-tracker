@@ -23,6 +23,7 @@ export interface HeliusSwapEvent {
 export interface HeliusEnhancedTransaction {
   signature: string;
   timestamp: number; // unix seconds
+  fee?: number; // lamports, from Helius enhanced transaction response
   type: string;
   source: string; // e.g. PUMP_FUN, PUMP_AMM, RAYDIUM, JUPITER
   feePayer: string;
@@ -44,6 +45,8 @@ export interface DetectedTrade {
   mint: string;
   solAmount: number; // in SOL, not lamports
   tokenAmount: number; // in whole tokens, not raw
+  feeSol: number | "";
+  priorityFeeSol: number | "";
 }
 
 // --- pump.fun coin metadata (subset) ---
@@ -82,6 +85,9 @@ export interface MintHistoryEntry {
   action: TradeAction;
   solAmount: number;
   tokenAmount: number;
+  feeSol?: number | "";
+  decisionClusterId?: string;
+  decisionClusterStartTimestampSec?: number;
 }
 
 export interface PersistedState {

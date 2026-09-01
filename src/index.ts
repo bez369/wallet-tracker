@@ -1,8 +1,9 @@
 import { config } from "./config";
+import { assignTradeClusters } from "./clustering";
 import { appendRow, ensureCsvHeader } from "./csvWriter";
 import { enrichTrade } from "./enrich";
 import { fetchNewTransactions } from "./heliusClient";
-import { getLastProcessedSignature, hasProcessed, loadState, markProcessed, saveState, setLastProcessedSignature } from "./state";
+import { getLastProcessedSignature, getMintHistory, hasProcessed, loadState, markProcessed, recordTrade, saveState, setLastProcessedSignature } from "./state";
 import { detectTrade } from "./tradeDetector";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -15,6 +16,14 @@ async function pollOnce(): Promise<void> {
 
   console.log(`[poll] ${txs.length} new transaction(s) since last check`);
 
+  const detected = txs
+    .filter((tx) => !hasProcessed(tx.signature))
+    .map((tx) => ({ tx, trade: detectTrade(tx) }));
+  const clusterContexts = assignTradeClusters(
+    detected.flatMap(({ trade }) => (trade ? [trade] : [])),
+    (mint) => getMintHistory(mint)
+  );
+
   for (const tx of txs) {
     if (hasProcessed(tx.signature)) continue;
     const trade = detectTrade(tx);
@@ -25,8 +34,11 @@ async function pollOnce(): Promise<void> {
         )} tokens (${trade.signature})`
       );
       try {
-        const row = await enrichTrade(trade);
+        const cluster = clusterContexts.get(trade.signature);
+        if (!cluster) throw new Error(`missing cluster context for ${trade.signature}`);
+        const { row, historyEntry } = await enrichTrade(trade, cluster);
         appendRow(row);
+        recordTrade(trade.mint, historyEntry);
         markProcessed(tx.signature);
       } catch (err) {
         console.error(`[enrich] failed for ${trade.signature}:`, (err as Error).message);

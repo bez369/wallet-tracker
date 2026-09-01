@@ -116,7 +116,7 @@ export function buildPositionLedger(inputPath: string, outputPath: string): void
     const action = (trade.action ?? "").toUpperCase();
     const tokenAmount = num(trade.token_amount);
     const solAmount = num(trade.sol_amount);
-    const feeSol = num(trade.network_fee_sol) + num(trade.priority_fee_sol);
+    const feeSol = num(trade.network_fee_sol);
     const prevPos = byMint.get(mint) ?? {
       qty: 0,
       totalCostSol: 0,

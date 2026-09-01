@@ -20,6 +20,8 @@ export const config = {
   csvPath: path.resolve(process.cwd(), process.env.CSV_PATH ?? "./data/entries.csv"),
   statePath: path.resolve(process.cwd(), process.env.STATE_PATH ?? "./state/state.json"),
   holderLookupMaxPages: Number(process.env.HOLDER_LOOKUP_MAX_PAGES ?? 3),
+  entryClusterGapSec: Number(process.env.ENTRY_CLUSTER_GAP_SEC ?? 5),
+  entryClusterMaxSpanSec: Number(process.env.ENTRY_CLUSTER_MAX_SPAN_SEC ?? 20),
   relevantSources: (process.env.RELEVANT_SOURCES ?? "")
     .split(",")
     .map((s) => s.trim().toUpperCase())

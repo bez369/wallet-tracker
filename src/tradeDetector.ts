@@ -2,6 +2,7 @@ import { config } from "./config";
 import { DetectedTrade, HeliusEnhancedTransaction } from "./types";
 
 const LAMPORTS_PER_SOL = 1_000_000_000;
+const BASE_SIGNATURE_FEE_LAMPORTS = 5_000;
 const WSOL_MINT = "So11111111111111111111111111111111111112";
 
 function parseRawTokenAmount(tokenAmount: string | number | undefined, decimals?: number): number {
@@ -104,12 +105,16 @@ export function detectTrade(tx: HeliusEnhancedTransaction): DetectedTrade | null
 
   const solAmount = Math.abs(netSolLamports.value) / LAMPORTS_PER_SOL;
   const tokenAmount = Math.abs(primaryDelta);
+  const feeSol = typeof tx.fee === "number" ? tx.fee / LAMPORTS_PER_SOL : "";
+  const priorityFeeSol = typeof tx.fee === "number"
+    ? Math.max(0, tx.fee - BASE_SIGNATURE_FEE_LAMPORTS) / LAMPORTS_PER_SOL
+    : "";
 
   if (primaryDelta > 0 && netSolLamports.value < 0) {
-    return { signature: tx.signature, timestampSec: tx.timestamp, action: "BUY", mint: primaryMint, solAmount, tokenAmount };
+    return { signature: tx.signature, timestampSec: tx.timestamp, action: "BUY", mint: primaryMint, solAmount, tokenAmount, feeSol, priorityFeeSol };
   }
   if (primaryDelta < 0 && netSolLamports.value > 0) {
-    return { signature: tx.signature, timestampSec: tx.timestamp, action: "SELL", mint: primaryMint, solAmount, tokenAmount };
+    return { signature: tx.signature, timestampSec: tx.timestamp, action: "SELL", mint: primaryMint, solAmount, tokenAmount, feeSol, priorityFeeSol };
   }
 
   return null;
